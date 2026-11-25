@@ -150,14 +150,23 @@ document.getElementById('orderForm').addEventListener('submit', async function(e
  if(!this.reportValidity()) return;
 
  const form = this;
+ if (form.dataset.orderSubmitted === 'true' || form.dataset.orderSubmitting === 'true') return;
  const submitButton = form.querySelector('button[type="submit"]');
  const originalButtonText = submitButton.textContent;
  const d = new FormData(form);
+ // Keep the same ID if this customer retries this order on the same page.
+ const orderId = form.dataset.orderId || (
+  'RZA-' + Date.now().toString(36).toUpperCase() + '-' +
+  Math.random().toString(36).slice(2, 8).toUpperCase()
+ );
+ form.dataset.orderId = orderId;
+ form.dataset.orderSubmitting = 'true';
  const pack = d.get('pack');
  const packPrice = pack === 'Pack of 1' ? 1500 : 2800;
  const delivery = 200;
  const total = packPrice + delivery;
  const order = {
+  orderId: orderId,
   customerName: String(d.get('customerName') || '').trim(),
   phone: String(d.get('phone') || '').trim(),
   address: String(d.get('address') || '').trim(),
@@ -183,6 +192,26 @@ document.getElementById('orderForm').addEventListener('submit', async function(e
    body: JSON.stringify(order)
   });
 
+  // Fire one TikTok CompletePayment event per unique order ID.
+  const purchaseKey = 'royalza_purchase_sent_' + orderId;
+  if (!localStorage.getItem(purchaseKey) &&
+      window.ttq && typeof window.ttq.track === 'function') {
+   window.ttq.track('CompletePayment', {
+    value: total,
+    currency: 'PKR',
+    content_type: 'product',
+    contents: [{
+     content_id: 'royal-za-waist-shaper',
+     content_name: 'Royal ZA Waist Shaper - ' + order.pack,
+     quantity: order.pack === 'Pack of 1' ? 1 : 2,
+     price: packPrice
+    }]
+   });
+   localStorage.setItem(purchaseKey, '1');
+  }
+  form.dataset.orderSubmitted = 'true';
+  form.dataset.orderSubmitting = 'false';
+
   const summary =
    'Selected Deal: ' + order.pack + '\n' +
    'Product Price: Rs. ' + packPrice.toLocaleString('en-PK') + '\n' +
@@ -200,6 +229,7 @@ document.getElementById('orderForm').addEventListener('submit', async function(e
   document.getElementById('thankyou').classList.add('show');
   window.scrollTo(0, 0);
  } catch (error) {
+  form.dataset.orderSubmitting = 'false';
   submitButton.disabled = false;
   submitButton.textContent = originalButtonText;
   alert('Order submit nahi ho saka. Internet check karke dobara try karein.');
